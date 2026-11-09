@@ -1,0 +1,167 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XOR Encryption WASM</title>
+
+<style>
+body {
+    background: #111827;
+    color: white;
+    font-family: Arial, sans-serif;
+    max-width: 750px;
+    margin: 40px auto;
+    padding: 20px;
+}
+
+h1 { color: white; }
+
+textarea {
+    width: 100%;
+    height: 150px;
+    box-sizing: border-box;
+    background: #1f2937;
+    color: #00ff99;
+    padding: 12px;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    font-size: 15px;
+    resize: vertical;
+}
+
+.result {
+    background: #1f2937;
+    padding: 15px;
+    color: #00ff99;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    min-height: 80px;
+    border-radius: 6px;
+}
+
+#status {
+    color: #60a5fa;
+}
+</style>
+</head>
+
+<body>
+
+<h1>XOR Encryption – C++ WASM</h1>
+
+<textarea id="input"
+placeholder="Wpisz tekst lub wklej szyfrogram..."></textarea>
+
+<h3>Wynik:</h3>
+
+<div id="result" class="result"></div>
+
+
+
+<script src="xor.js"></script>
+
+<script>
+let wasm = null;
+
+const input = document.getElementById("input");
+const result = document.getElementById("result");
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder("utf-8", {fatal: true});
+
+createXOR().then(Module => {
+    wasm = Module;
+
+    if (!wasm._xor_data) {
+        throw new Error("Nie znaleziono funkcji xor_data w WASM");
+    }
+
+    
+})
+
+function xorBytes(bytes) {
+    const ptr = wasm._malloc(Math.max(1, bytes.length));
+
+    if (!ptr) {
+        throw new Error("Nie udało się przydzielić pamięci WASM");
+    }
+
+    try {
+        wasm.HEAPU8.set(bytes, ptr);
+        wasm._xor_data(ptr, bytes.length);
+
+        return wasm.HEAPU8.slice(ptr, ptr + bytes.length);
+    } finally {
+        wasm._free(ptr);
+    }
+}
+
+function toBase64(bytes) {
+    let binary = "";
+
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+
+    return btoa(binary);
+}
+
+function fromBase64(text) {
+    const binary = atob(text);
+
+    return Uint8Array.from(
+        binary,
+        char => char.charCodeAt(0)
+    );
+}
+
+function encrypt(text) {
+    const bytes = encoder.encode(text);
+    const encrypted = xorBytes(bytes);
+
+    return "XOR1:" + toBase64(encrypted);
+}
+
+function decrypt(text) {
+    const base64 = text.substring(5).trim();
+
+    if (!base64) {
+        throw new Error("Brak danych szyfrogramu");
+    }
+
+    const encrypted = fromBase64(base64);
+    const decrypted = xorBytes(encrypted);
+
+    return decoder.decode(decrypted);
+}
+
+input.addEventListener("input", () => {
+    if (!wasm) return;
+
+    const text = input.value;
+
+    if (text.length === 0) {
+        result.textContent = "";
+
+        return;
+    }
+
+    try {
+        if (text.startsWith("XOR1:")) {
+            result.textContent = decrypt(text);
+
+        } else {
+            result.textContent = encrypt(text);
+
+        }
+    } catch (error) {
+        result.textContent = "Błąd: " + error.message;
+
+    }
+});
+</script>
+
+</body>
+</html>
